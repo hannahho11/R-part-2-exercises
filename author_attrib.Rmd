@@ -1,0 +1,215 @@
+---
+title: "author_attrib"
+author: "hannah"
+date: "8/18/2019"
+output: pdf_document
+---
+```{r setup, include=FALSE, echo=FALSE}
+require("knitr")
+opts_knit$set(root.dir = "C:/Users/Hannah/Desktop/UT Austin/Analytics - MSBA/summer 19/predictive modeling/STA380-1-master/STA380-1-master/R")
+```
+
+```{r}
+library(tm)
+library(magrittr)
+
+# Remember to source in the "reader" wrapper function
+# it's stored as a Github gist at:
+# https://gist.github.com/jgscott/28d9d1287a0c3c1477e2113f6758d5ff
+
+readerPlain = function(fname){
+  readPlain(elem=list(content=readLines(fname)), 
+            id=fname, language='en') }
+
+## Rolling two directories together into a single corpus
+author_dirs = Sys.glob('../data/ReutersC50/C50train/*')
+file_list = NULL
+labels = NULL
+for(author in author_dirs) {
+  author_name = substring(author, first=29) #author name starts at 29th char
+  files_to_add = Sys.glob(paste0(author, '/*.txt'))
+  file_list = append(file_list, files_to_add)
+  labels = append(labels, rep(author_name, length(files_to_add)))
+}
+
+# Need a more clever regex to get better names here
+all_docs = lapply(file_list, readerPlain) 
+names(all_docs) = file_list
+names(all_docs) = sub('.txt', '', names(all_docs))
+
+# Clean up the file names, append author to filename
+# This uses the piping operator from magrittr
+# See https://cran.r-project.org/web/packages/magrittr/vignettes/magrittr.html
+mynames = file_list %>%
+  { strsplit(., '/', fixed=TRUE) } %>%
+  { lapply(., tail, n=2) } %>%
+  { lapply(., paste0, collapse = '') } %>%
+  unlist
+
+names(all_docs) = mynames 
+my_corpus = Corpus(VectorSource(all_docs))
+
+# Preprocessing
+my_corpus = tm_map(my_corpus, content_transformer(tolower)) # make everything lowercase
+my_corpus = tm_map(my_corpus, content_transformer(removeNumbers)) # remove numbers
+my_corpus = tm_map(my_corpus, content_transformer(removePunctuation)) # remove punctuation
+my_corpus = tm_map(my_corpus, content_transformer(stripWhitespace)) ## remove excess white-space
+my_corpus = tm_map(my_corpus, content_transformer(removeWords), stopwords("SMART"))
+
+DTM = DocumentTermMatrix(my_corpus)
+DTM # some basic summary statistics
+```
+
+
+```{r}
+#########################################################
+#TF-IDF
+## Removes those terms that have count 0 in >95% of docs.  
+DTM = removeSparseTerms(DTM, 0.975) #0.95 arbitrary choice.
+DTM # now ~ 1411 terms
+
+# construct TF IDF weights
+tfidf = weightTfIdf(DTM)
+```
+
+#Preprocess test data
+```{r}
+author_dirs_test = Sys.glob('../data/ReutersC50/C50test/*')
+file_list_test = NULL
+labels_test = NULL
+for(author in author_dirs_test) {
+  author_name = substring(author, first=28) #author name starts at 29th char
+  files_to_add = Sys.glob(paste0(author, '/*.txt'))
+  file_list_test = append(file_list_test, files_to_add)
+  labels_test = append(labels_test, rep(author_name, length(files_to_add)))
+}
+
+# Need a more clever regex to get better names here
+all_docs_test = lapply(file_list_test, readerPlain) 
+names(all_docs_test) = file_list_test
+names(all_docs_test) = sub('.txt', '', names(all_docs_test))
+
+# Clean up the file names, append author to filename
+# This uses the piping operator from magrittr
+# See https://cran.r-project.org/web/packages/magrittr/vignettes/magrittr.html
+mynames_test = file_list %>%
+  { strsplit(., '/', fixed=TRUE) } %>%
+  { lapply(., tail, n=2) } %>%
+  { lapply(., paste0, collapse = '') } %>%
+  unlist
+
+names(all_docs_test) = mynames_test 
+my_corpus_test = Corpus(VectorSource(all_docs_test))
+
+# Preprocessing test data
+my_corpus_test = tm_map(my_corpus_test, content_transformer(tolower)) # make everything lowercase
+my_corpus_test = tm_map(my_corpus_test, content_transformer(removeNumbers)) # remove numbers
+my_corpus_test = tm_map(my_corpus_test, content_transformer(removePunctuation)) # remove punctuation
+my_corpus_test = tm_map(my_corpus_test, content_transformer(stripWhitespace)) ## remove excess white-space
+my_corpus_test = tm_map(my_corpus_test, content_transformer(removeWords), stopwords("SMART"))
+
+# IGNORE words not seen before
+DTM_test = DocumentTermMatrix(my_corpus_test,control=list(dictionary=Terms(DTM)))
+summary(Terms(DTM_test) %in% Terms(DTM)) # some basic summary statistics
+```
+
+```{r}
+#TF-IDF on test
+# construct TF IDF weights
+tfidf_test = weightTfIdf(DTM_test)
+```
+```{r}
+####
+# Dimensionality reduction
+####
+
+# Now PCA on term frequencies
+X = as.matrix(tfidf)
+summary(colSums(X))
+scrub_cols = which(colSums(X) == 0)
+X = X[,-scrub_cols]
+
+pca = prcomp(X, scale=TRUE)
+plot(pca)
+```
+```{r}
+# Look at the loadings
+pca$rotation[order(abs(pca$rotation[,1]),decreasing=TRUE),1][1:25]
+```
+
+```{r}
+pca$rotation[order(abs(pca$rotation[,2]),decreasing=TRUE),2][1:25]
+```
+
+
+```{r}
+## Look at the first two PCs..
+# We've now turned each document into a single pair of numbers -- massive dimensionality reduction
+pca$x[1:50,1:2]
+
+plot(pca$x[1:50,1:2], xlab="PCA 1 direction", ylab="PCA 2 direction", bty="n",
+     type='n')
+text(pca$x[1:50,1:2], labels = 1:length(all_docs), cex=0.7)
+# Conclusion: even just these two-number summaries still preserve a lot of information
+
+```
+```{r}
+#load the package class
+# library(class)
+# #run knn function
+# pr <- knn(tfidf,tfidf_test,cl=labels,k=10)
+#  
+# #create confusion matrix
+# tab <- table(pr,labels_test)
+#  
+# #this function divides the correct predictions by total number of predictions that tell us how accurate the model is.
+#  
+# accuracy <- function(x){sum(diag(x)/(sum(rowSums(x)))) * 100}
+# accuracy(tab)
+```
+```{r}
+# library(kknn)
+# 
+# pr =kknn(labels_test~lstat,train,test,k=i,kernel = "rectangular") 
+```
+
+```{r}
+# # training and testing matrices. CONTROL+SHIFT+C TO COMMENT OUT
+# # Notice the smoothing (pseudo-count) to the training matrix
+# # this ensures we don't have zero-probability events
+# X_train = X_NB[train_set,] + 1/D #.001's are smoothing (??)
+# y_train = labels
+# X_test = X_NB[test_set,]
+# y_test = labels_test
+
+# # First construct our vectors of probabilities under D (0) and R (1) classes
+# # smoothing the training matrix of counts was important so that we get no zeros here
+# #class specific probability vectors
+# pvec_0 = colSums(X_train[y_train==0,])
+# pvec_0 = pvec_0/sum(pvec_0)
+# pvec_1 = colSums(X_train[y_train==1,])
+# pvec_1 = pvec_1/sum(pvec_1)
+# 
+# # now try a query doc in the test set
+# i = 1
+# test_doc = X_test[i,]
+# sum(test_doc * log(pvec_0))
+# sum(test_doc * log(pvec_1))
+# y_test[i]
+# 
+# 
+# # classify all the docs in the test set
+# yhat_test = foreach(i = seq_along(test_set), .combine='c') %do% {
+#   test_doc = X_test[i,]
+#   logp0 = sum(test_doc * log(pvec_0))
+#   logp1 = sum(test_doc * log(pvec_1))
+#   0 + {logp1 > logp0}
+# }
+# 
+# confusion_matrix = xtabs(~y_test + yhat_test)
+# confusion_matrix
+# 
+# # overall error rate: comparable to logit model with PCA on TF-IDF weights
+# 1-sum(diag(confusion_matrix))/length(test_set)
+# 
+# ```
