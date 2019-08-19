@@ -1,6 +1,6 @@
 ---
 title: "author_attrib"
-author: "hannah"
+author: "hannah ho"
 date: "8/18/2019"
 output: pdf_document
 ---
@@ -13,15 +13,12 @@ opts_knit$set(root.dir = "C:/Users/Hannah/Desktop/UT Austin/Analytics - MSBA/sum
 library(tm)
 library(magrittr)
 
-# Remember to source in the "reader" wrapper function
-# it's stored as a Github gist at:
-# https://gist.github.com/jgscott/28d9d1287a0c3c1477e2113f6758d5ff
-
+# "reader" wrapper function
 readerPlain = function(fname){
   readPlain(elem=list(content=readLines(fname)), 
             id=fname, language='en') }
 
-## Rolling two directories together into a single corpus
+# Rolling all directories into a single corpus
 author_dirs = Sys.glob('../data/ReutersC50/C50train/*')
 file_list = NULL
 labels = NULL
@@ -32,13 +29,13 @@ for(author in author_dirs) {
   labels = append(labels, rep(author_name, length(files_to_add)))
 }
 
-# Need a more clever regex to get better names here
+# Use regex to get better file names
 all_docs = lapply(file_list, readerPlain) 
 names(all_docs) = file_list
 names(all_docs) = sub('.txt', '', names(all_docs))
 
 # Clean up the file names, append author to filename
-# This uses the piping operator from magrittr
+# Uses the piping operator from magrittr
 # See https://cran.r-project.org/web/packages/magrittr/vignettes/magrittr.html
 mynames = file_list %>%
   { strsplit(., '/', fixed=TRUE) } %>%
@@ -57,15 +54,12 @@ my_corpus = tm_map(my_corpus, content_transformer(stripWhitespace)) ## remove ex
 my_corpus = tm_map(my_corpus, content_transformer(removeWords), stopwords("SMART"))
 
 DTM = DocumentTermMatrix(my_corpus)
-DTM # some basic summary statistics
 ```
 
-
 ```{r}
-#########################################################
-#TF-IDF
-## Removes those terms that have count 0 in >95% of docs.  
-DTM = removeSparseTerms(DTM, 0.975) #0.95 arbitrary choice.
+# Create TF-IDF matrix
+# Removes terms that have count 0 in >97.5% of docs.  
+DTM = removeSparseTerms(DTM, 0.975) 
 DTM # now ~ 1411 terms
 
 # construct TF IDF weights
@@ -114,12 +108,11 @@ summary(Terms(DTM_test) %in% Terms(DTM)) # some basic summary statistics
 ```
 
 ```{r}
-#TF-IDF on test
-# construct TF IDF weights
+# Create TF-IDF matrix of same dimensions on test data
 tfidf_test = weightTfIdf(DTM_test)
 ```
 ```{r}
-# Now PCA on term frequencies for train data
+# Run PCA on term frequencies for train data
 X = as.matrix(tfidf)
 summary(colSums(X))
 scrub_cols = which(colSums(X) == 0)
@@ -127,7 +120,7 @@ X = X[,-scrub_cols]
 
 pca = prcomp(X, scale=TRUE)
 plot(pca)
-#biplot(pca, scale = 0)
+#biplot(pca, scale = 0) #another visualization, but too dense to be interpretable
 ```
 ```{r}
 # Look at the loadings
@@ -135,58 +128,59 @@ pca$rotation[order(abs(pca$rotation[,1]),decreasing=TRUE),1][1:25]
 ```
 
 ```{r}
-#compute standard deviation of each principal component
+# Find optimal number of principal components to include in knn model
+# Compute standard deviation of each principal component
 std_dev <- pca$sdev
 
-#compute variance
+# Variance
 pc_var <- std_dev^2
 
-#check variance of first 10 components
+# Check variance of first 10 components
 pc_var[1:10]
 ```
-
-
 ```{r}
-#proportion of variance explained
+# Proportion of variance explained
 prop_var <- pc_var/sum(pc_var)
-prop_var[1:1]5
+prop_var[1:15]
 ```
 ```{r}
-#scree plot: line plot of the eigenvalues of principal components in an analysis, used to determine the number of principal components to keep in a PCA
+# Scree plot: line plot of the eigenvalues of principal components in an analysis, used to determine the number of principal components to keep in a PCA
 plot(prop_var, xlab = "Principal Component",ylab = "Proportion of Variance Explained", type = "b")
 ```
 ```{r}
-#cumulative scree plot
+# Cumulative scree plot as another visualization
 plot(cumsum(prop_var), xlab = "Principal Component",ylab = "Cumulative Proportion of Variance Explained",type = "b")
-abline(v=600,lty=2,col=2,lwd=2) 
-abline(h=0.8,lty=2,col=2,lwd=2) 
+abline(v=200,lty=2,col=2,lwd=2) 
+abline(h=0.4,lty=2,col=2,lwd=2) 
 ```
-600 components explain a little over 80% of variance in the training set, so we will use the first 600 principal components. This is over a 50% decrease in dimension from the 1411 dimensions in the tfidf matrix. 
+600 components explain a little over 40% of variance in the training set, so we will use the first 200 principal components. Reducing the original 1411 dimensions in the tfidf matrix increases the effectiveness of knn analysis.
 ```{r}
-#transform test into PCA
+# Transform test term frequency data into principal components.
 pca_test <- predict(pca, newdata = tfidf_test)
 pca_test <- as.data.frame(pca_test)
 ```
-
 ```{r}
 # #train knn analysis model on training set
 # library(kknn)
 # pr=kknn(labels~.,as.data.frame(pca$x[,1:600]),pca_test[,1:600],k=10, kernel = 'cos')
 ```
 ```{r}
+# Predict authors on test data using KNN model
 library(class)
 
 prediction = knn(pca$x[,1:200],pca_test[,1:200],cl=labels,k=3)
 ```
 ```{r}
+# Write predictions to csv file
 library(readr)
 prediction.table <- data.frame(ImageId=1:nrow(pca_test), Label=prediction)
 write_csv(prediction.table, "tfidf_pca_200_knn_3.csv")
 ```
 ```{r}
-#uses package caret(short for Classification And REgression Training)
+# Create confusion matrix and fetch accuracy rate of predictions
 library(caret)
 result = confusionMatrix(table(prediction.table[,2], labels),dnn =c("Prediction", "Reference"),mode = "sens_spec")
 overall_accuracy = result$overall['Accuracy']
 overall_accuracy
 ```
+Running knn analysis with a value of k = 3 using the top 200 principal components derived from TF-IDF matrices on the test data results in a prediction accuracy of 43%.
