@@ -183,6 +183,13 @@ library(readr)
 prediction.table <- data.frame(ImageId=1:nrow(pca_test), Label=prediction)
 write_csv(prediction.table, "tfidf_pca_200_knn_3.csv")
 ```
+```{r}
+#uses package caret(short for Classification And REgression Training)
+library(caret)
+result = confusionMatrix(table(prediction.table[,2], labels),dnn =c("Prediction", "Reference"),mode = "sens_spec")
+overall_accuracy = result$overall['Accuracy']
+overall_accuracy
+```
 
 ```{r}
 # # training and testing matrices. CONTROL+SHIFT+C TO COMMENT OUT
