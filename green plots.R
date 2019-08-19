@@ -6,6 +6,7 @@
 library(tidyverse)
 library(knitr)
 library(reshape2)
+library(plyr)
 
 green = read.csv('C:/Users/Hannah/Desktop/UT Austin/Analytics - MSBA/summer 19/predictive modeling/STA380-1-master/STA380-1-master/data/greenbuildings.csv')
 #detach(green)
@@ -43,13 +44,14 @@ ggplot(data = green_class) +
 # Plot number of buildings per Green Status per Class
 ###
 
+# WORKING ON GROUPBY to get counts of buildigs per hierarchical group
 # grouping by two variables and spreading one across the columns
-TitanicSurvival %>%
-  group_by(passengerClass, survived) %>%
-  summarize(mean_age = mean(age, na.rm=TRUE)) %>%
+by_class = group_by(data.frame(green_class$merge_class_fac), data.frame(green_class$green_rating_fac)) 
+d1 = by_class %>%
+  summarize(num_buildings = count(green_class$by_class, green_class$green_rating_fac)) %>%
   spread(survived, mean_age)
          
-d1 = green_class %>%
-  group_by(green_class$merge_class, green_class$green_rating) %>%
-  summarize(buildings = count(green_class, 'merge_class_fac'))
-d1
+by_cyl %>% summarise(
+  disp = mean(disp),
+  hp = mean(hp)
+)
