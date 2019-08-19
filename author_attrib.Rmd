@@ -119,11 +119,7 @@ summary(Terms(DTM_test) %in% Terms(DTM)) # some basic summary statistics
 tfidf_test = weightTfIdf(DTM_test)
 ```
 ```{r}
-####
-# Dimensionality reduction
-####
-
-# Now PCA on term frequencies
+# Now PCA on term frequencies for train data
 X = as.matrix(tfidf)
 summary(colSums(X))
 scrub_cols = which(colSums(X) == 0)
@@ -131,6 +127,7 @@ X = X[,-scrub_cols]
 
 pca = prcomp(X, scale=TRUE)
 plot(pca)
+#biplot(pca, scale = 0)
 ```
 ```{r}
 # Look at the loadings
@@ -138,39 +135,53 @@ pca$rotation[order(abs(pca$rotation[,1]),decreasing=TRUE),1][1:25]
 ```
 
 ```{r}
-pca$rotation[order(abs(pca$rotation[,2]),decreasing=TRUE),2][1:25]
+#compute standard deviation of each principal component
+std_dev <- pca$sdev
+
+#compute variance
+pc_var <- std_dev^2
+
+#check variance of first 10 components
+pc_var[1:10]
 ```
 
 
 ```{r}
-## Look at the first two PCs..
-# We've now turned each document into a single pair of numbers -- massive dimensionality reduction
-pca$x[1:50,1:2]
-
-plot(pca$x[1:50,1:2], xlab="PCA 1 direction", ylab="PCA 2 direction", bty="n",
-     type='n')
-text(pca$x[1:50,1:2], labels = 1:length(all_docs), cex=0.7)
-# Conclusion: even just these two-number summaries still preserve a lot of information
-
+#proportion of variance explained
+prop_var <- pc_var/sum(pc_var)
+prop_var[1:1]5
 ```
 ```{r}
-#load the package class
-# library(class)
-# #run knn function
-# pr <- knn(tfidf,tfidf_test,cl=labels,k=10)
-#  
-# #create confusion matrix
-# tab <- table(pr,labels_test)
-#  
-# #this function divides the correct predictions by total number of predictions that tell us how accurate the model is.
-#  
-# accuracy <- function(x){sum(diag(x)/(sum(rowSums(x)))) * 100}
-# accuracy(tab)
+#scree plot: line plot of the eigenvalues of principal components in an analysis, used to determine the number of principal components to keep in a PCA
+plot(prop_var, xlab = "Principal Component",ylab = "Proportion of Variance Explained", type = "b")
 ```
 ```{r}
+#cumulative scree plot
+plot(cumsum(prop_var), xlab = "Principal Component",ylab = "Cumulative Proportion of Variance Explained",type = "b")
+abline(v=600,lty=2,col=2,lwd=2) 
+abline(h=0.8,lty=2,col=2,lwd=2) 
+```
+600 components explain a little over 80% of variance in the training set, so we will use the first 600 principal components. This is over a 50% decrease in dimension from the 1411 dimensions in the tfidf matrix. 
+```{r}
+#transform test into PCA
+pca_test <- predict(pca, newdata = tfidf_test)
+pca_test <- as.data.frame(pca_test)
+```
+
+```{r}
+# #train knn analysis model on training set
 # library(kknn)
-# 
-# pr =kknn(labels_test~lstat,train,test,k=i,kernel = "rectangular") 
+# pr=kknn(labels~.,as.data.frame(pca$x[,1:600]),pca_test[,1:600],k=10, kernel = 'cos')
+```
+```{r}
+library(class)
+
+prediction = knn(pca$x[,1:200],pca_test[,1:200],cl=labels,k=3)
+```
+```{r}
+library(readr)
+prediction.table <- data.frame(ImageId=1:nrow(pca_test), Label=prediction)
+write_csv(prediction.table, "tfidf_pca_200_knn_3.csv")
 ```
 
 ```{r}
